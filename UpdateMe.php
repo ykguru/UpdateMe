@@ -37,6 +37,9 @@ class UpdateMe
     private $default_directory_mode = '0755';
     private $version_filename = 'version.txt';
 
+    /**
+     * @param string $config Check config.php.sample for more information about configuration
+     */
     public function __construct($config)
     {
         if (substr($config['PATCH_URL'], -1) != '/') {
@@ -48,6 +51,10 @@ class UpdateMe
         $this->LOCAL_BACKUP_DIR = $config['LOCAL_BACKUP_DIR'];
     }
 
+    /**
+     * Check whether server has new version
+     * @return mixed Will return server version number if server version is bigger, or FALSE otherwise
+     */
     public function check_update()
     {
 
@@ -59,6 +66,10 @@ class UpdateMe
             return FALSE;
     }
 
+    /**
+     * Get the latest version number of server files.
+     * @return string Version number of latest patch in server
+     */
     public function check_server_version()
     {
         // Get Patch version
@@ -70,16 +81,20 @@ class UpdateMe
         $str = curl_exec($ch);
         curl_close($ch);
 
-        $server_vesion = $this->str_to_version_info_($str);
+        $server_vesion = $this->str_to_version_info($str);
         return $server_vesion;
     }
 
+    /**
+     * Get the current version of local files
+     * @return string Version number of current files
+     */
     public function check_local_version()
     {
         // Get local version
         if (file_exists($path = $this->LOCAL_BACKUP_DIR.$this->version_filename)) {
             $str = file_get_contents($path);
-            $local_version = $this->str_to_version_info_($str);
+            $local_version = $this->str_to_version_info($str);
         }
         else
             $local_version = FALSE;
@@ -87,7 +102,11 @@ class UpdateMe
         return $local_version;
     }
 
-    public function get_patch_version($version)
+    /**
+     * Download patch file from server with given version number
+     * @param type $version the version number of file to download
+     */
+    public function get_patch_file($version)
     {
         $ch = curl_init($this->PATCH_URL.$version.'.zip');
         $fp = fopen($this->LOCAL_BACKUP_DIR.$version.'.zip', "w");
@@ -98,9 +117,13 @@ class UpdateMe
         curl_exec($ch);
         curl_close($ch);
         fclose($fp);
-        return true;
     }
 
+    /**
+     * Update local files using patch file with specific version number
+     * @param type $version
+     * @throws Exception Throw error if patch file with given version not found
+     */
     public function update($version = FALSE)
     {
         $files = $this->get_backed_up_files();
@@ -122,6 +145,7 @@ class UpdateMe
             $name = $stat['name'];
             $path = $this->LOCAL_BASE_DIR.$name;
 
+            // TODO: Precheck here ----
             // It's directory
             if (substr($name, -1) == '/') {
                 // Directory not exist? Create it
@@ -185,7 +209,7 @@ class UpdateMe
         return ($return_report) ? $report : $complete;
     }
 
-    private function str_to_version_info_($string)
+    private function str_to_version_info($string)
     {
         $lines = explode("\n", $string);
         if (!$lines) return FALSE;
