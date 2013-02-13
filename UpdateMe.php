@@ -36,6 +36,7 @@ class UpdateMe
     private $LOCAL_BACKUP_DIR = '';
     private $default_directory_mode = '0755';
     private $version_filename = 'version.txt';
+    private $remove_filename = 'remove-list.txt';
 
     /**
      * @param string $config Check config.php.sample for more information about configuration
@@ -140,6 +141,8 @@ class UpdateMe
         // Get list of file in zip & pre-check routine
         $zip = new ZipArchive();
         $zip->open($this->LOCAL_BACKUP_DIR.$files[$version]);
+        $file_list = array();
+        $remove_filename = FALSE;
         for( $i = 0; $i < $zip->numFiles; $i++ ) {
             $stat = $zip->statIndex( $i );
             $name = $stat['name'];
@@ -155,13 +158,31 @@ class UpdateMe
             }
             // It's file
             else {
-
+                $file_list[] = $name;
+                if (strtolower($name) == $this->remove_filename)
+                    $remove_filename = $name;
             }
+        }
+
+        $this->create_rollback($version, $this->check_local_version(), $file_list);
+
+        if ($remove_filename) {
+            $remove_list = $zip->getFromName($remove_filename);
+            if ($remove_list !== FALSE) {
+                $remove_files = explode("\n", $remove_list);
+                foreach ($remove_files as $remove_file) {
+                    if (file_exists($this->LOCAL_BASE_DIR.$remove_file))
+                        unlink($this->LOCAL_BASE_DIR.$remove_file);
+                }
+            }
+
         }
 
         // Extract the zip file
         $zip->extractTo($this->LOCAL_BASE_DIR);
         $zip->close();
+
+        if ($remove_filename) unlink($this->LOCAL_BASE_DIR.$remove_filename);
 
         // Update local version info
         file_put_contents($this->LOCAL_BACKUP_DIR.$this->version_filename, $version);
@@ -182,6 +203,79 @@ class UpdateMe
         }
         arsort($list);
         return $list;
+    }
+
+    /**
+     * Generate zipped files that is going to be replaced/removed by Update command.
+     *
+     * @param type $version1
+     * @param type $version2
+     * @param type $file_list
+     */
+    private function create_rollback($version1, $version2, $file_list)
+    {
+        if (!$version2) $version2 = '0.0.0';
+        $i = 1;
+        $zipname = "{$version1}.{$i}.{$version2}.zip";
+        while (file_exists($this->LOCAL_BACKUP_DIR.$zipname)) {
+            $i++;
+            $zipname = "{$version1}.{$i}.{$version2}.zip";
+        }
+
+        $zip = new ZipArchive();
+        $res = $zip->open($this->LOCAL_BACKUP_DIR.$zipname, ZipArchive::CREATE);
+        if ($res === TRUE) {
+            foreach ($file_list as $file) {
+                $zip->addFile($this->LOCAL_BASE_DIR.$file, $file);
+            }
+            $zip->addFromString($this->remove_filename, implode("\n", $file_list));
+            $zip->close();
+        }
+    }
+
+    /**
+     * Rollback the latest update
+     */
+    public function rollback()
+    {
+        // Find a rollback file.
+        $current_version = $this->check_local_version();
+        $files = scandir($this->LOCAL_BACKUP_DIR);
+        $list = array();
+        $regex = '/^('.str_replace('.', '\.', $current_version).'\.(\d+)\.(\d+\.\d+\.\d+))\.zip$/i';
+        foreach ($files as $file) {
+            if (preg_match($regex, $file, $match) && is_file($this->LOCAL_BACKUP_DIR.$file)) {
+                $list[$match[2]] = array('file'=>$file, 'ver'=>$match[3]);
+            }
+        }
+        krsort($list);
+        $rollback_version = key($list);
+        if (!$rollback_version) return FALSE;
+        $zipfile = $list[$rollback_version]['file'];
+        $previous_version = $list[$rollback_version]['ver'];
+
+        $zip = new ZipArchive();
+        $zip->open($this->LOCAL_BACKUP_DIR.$zipfile);
+        $remove_list = $zip->getFromName($this->remove_filename);
+        if ($remove_list !== FALSE) {
+            $remove_files = explode("\n", $remove_list);
+            foreach ($remove_files as $remove_file) {
+                if (file_exists($this->LOCAL_BASE_DIR.$remove_file))
+                    unlink($this->LOCAL_BASE_DIR.$remove_file);
+            }
+        }
+
+        // Extract the zip file
+        $zip->extractTo($this->LOCAL_BASE_DIR);
+        $zip->close();
+
+        if ($remove_list !== FALSE) unlink($this->LOCAL_BASE_DIR.$this->remove_filename);
+
+        // Update local version info
+        file_put_contents($this->LOCAL_BACKUP_DIR.$this->version_filename, $previous_version);
+
+        // Remove rollback file
+        unlink($this->LOCAL_BACKUP_DIR.$zipfile);
     }
 
     public function check_dependencies($return_report = FALSE)
@@ -211,12 +305,10 @@ class UpdateMe
 
     private function str_to_version_info($string)
     {
-        $lines = explode("\n", $string);
-        if (!$lines) return FALSE;
-
-        $line = str_replace("\t", ' ', trim($lines[0]));
-        $pieces = explode(" ", $line);
-        $latest_version = trim($pieces[0]);
+        $latest_version = FALSE;
+        if (preg_match('/^\s*?(\d+\.\d+\.\d+)/i', $string, $match)) {
+            $latest_version = $match[1];
+        }
         return $latest_version;
     }
 
