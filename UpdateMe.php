@@ -23,7 +23,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *
  * @package UpdateMe
- * @version 0.0.1
+ * @version 0.0.2
  * @author Yakub Kristianto
  * @copyright Yakub Kristianto 2013
  */
@@ -168,14 +168,7 @@ class UpdateMe
 
         if ($remove_filename) {
             $remove_list = $zip->getFromName($remove_filename);
-            if ($remove_list !== FALSE) {
-                $remove_files = explode("\n", $remove_list);
-                foreach ($remove_files as $remove_file) {
-                    if (file_exists($this->LOCAL_BASE_DIR.$remove_file))
-                        unlink($this->LOCAL_BASE_DIR.$remove_file);
-                }
-            }
-
+            $this->remove_files($remove_list);
         }
 
         // Extract the zip file
@@ -257,13 +250,7 @@ class UpdateMe
         $zip = new ZipArchive();
         $zip->open($this->LOCAL_BACKUP_DIR.$zipfile);
         $remove_list = $zip->getFromName($this->remove_filename);
-        if ($remove_list !== FALSE) {
-            $remove_files = explode("\n", $remove_list);
-            foreach ($remove_files as $remove_file) {
-                if (file_exists($this->LOCAL_BASE_DIR.$remove_file))
-                    unlink($this->LOCAL_BASE_DIR.$remove_file);
-            }
-        }
+        $this->remove_files($remove_list);
 
         // Extract the zip file
         $zip->extractTo($this->LOCAL_BASE_DIR);
@@ -311,5 +298,17 @@ class UpdateMe
         }
         return $latest_version;
     }
+
+    private function remove_files($remove_list)
+    {
+        if ($remove_list === FALSE) return FALSE;
+
+        $remove_files = explode("\n", $remove_list);
+        foreach ($remove_files as $remove_file) {
+            if (strpos($remove_file, '..') !== FALSE) continue;
+            if (file_exists($this->LOCAL_BASE_DIR.$remove_file))
+                unlink($this->LOCAL_BASE_DIR.$remove_file);
+        }
+   }
 
 }
