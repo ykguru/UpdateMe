@@ -23,14 +23,14 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *
  * @package UpdateMe
- * @version 0.0.2
+ * @version 0.0.3
  * @author Yakub Kristianto
  * @copyright Yakub Kristianto 2013
  */
 
 class UpdateMe
 {
-	const version = '0.0.2';
+	const version = '0.0.3';
 	private $PATCH_URL = '';
 	private $LOCAL_BASE_DIR = '';
 	private $LOCAL_BACKUP_DIR = '';
@@ -110,6 +110,19 @@ class UpdateMe
 	public function get_patch_file($version)
 	{
 		$ch = curl_init($this->PATCH_URL.$version.'.zip');
+		curl_setopt($ch, CURLOPT_HEADER, 1);
+		curl_setopt($ch, CURLOPT_NOBODY, 1);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+		curl_exec($ch);
+		$status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		$type = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+		curl_close($ch);
+		if ($status != 200 && $type != 'application/zip') {
+			return FALSE;
+		}
+
+		// If server has the file, download it
+		$ch = curl_init($this->PATCH_URL.$version.'.zip');
 		$fp = fopen($this->LOCAL_BACKUP_DIR.$version.'.zip', "w");
 
 		curl_setopt($ch, CURLOPT_FILE, $fp);
@@ -118,6 +131,7 @@ class UpdateMe
 		curl_exec($ch);
 		curl_close($ch);
 		fclose($fp);
+		return TRUE;
 	}
 
 	/**
@@ -136,6 +150,10 @@ class UpdateMe
 
 		if (!isset($files[$version])) {
 			throw new Exception('Version '.$version.' not found!');
+		}
+
+		if (!file_exists($this->LOCAL_BACKUP_DIR.$files[$version])) {
+			throw new Exception('File '.$files[$version].' not found!');
 		}
 
 		// Get list of file in zip & pre-check routine
@@ -164,12 +182,14 @@ class UpdateMe
 			}
 		}
 
-		$this->create_rollback($version, $this->check_local_version(), $file_list);
-
+		$remove_list = FALSE;
 		if ($remove_filename) {
 			$remove_list = $zip->getFromName($remove_filename);
-			$this->remove_files($remove_list);
 		}
+
+		$this->create_rollback($version, $this->check_local_version(), $file_list, $remove_list);
+
+		$this->remove_files($remove_list);
 
 		// Extract the zip file
 		$zip->extractTo($this->LOCAL_BASE_DIR);
@@ -205,7 +225,7 @@ class UpdateMe
 	 * @param type $version2
 	 * @param type $file_list
 	 */
-	private function create_rollback($version1, $version2, $file_list)
+	private function create_rollback($version1, $version2, $file_list, $remove_list)
 	{
 		if (!$version2) $version2 = '0.0.0';
 		$i = 1;
@@ -215,12 +235,29 @@ class UpdateMe
 			$zipname = "{$version1}.{$i}.{$version2}.zip";
 		}
 
+		$remove_files = array();
+		if ($remove_list !== FALSE)
+			$remove_files = explode("\n", $remove_list);
+
 		$zip = new ZipArchive();
 		$res = $zip->open($this->LOCAL_BACKUP_DIR.$zipname, ZipArchive::CREATE);
 		if ($res === TRUE) {
-			foreach ($file_list as $file) {
-				$zip->addFile($this->LOCAL_BASE_DIR.$file, $file);
+			// Backup files that are going to be removed
+			foreach ($remove_files as $k=>$file) {
+				if (in_array($file, $file_list)) continue;
+				if (file_exists($file) && is_file($file)) {
+					$zip->addFile($this->LOCAL_BASE_DIR.$file, $file);
+				}
 			}
+
+			// Backup files that are going to be updated
+			foreach ($file_list as $file) {
+				if (file_exists($file) && is_file($file)) {
+					$zip->addFile($this->LOCAL_BASE_DIR.$file, $file);
+				}
+			}
+
+			// Add all files that are going to be updated to remove list
 			$zip->addFromString($this->remove_filename, implode("\n", $file_list));
 			$zip->close();
 		}
