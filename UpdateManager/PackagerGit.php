@@ -15,7 +15,8 @@ class PackagerGit extends PackagerAbstractModel
 	public function get_latest_version()
 	{
 		//$a = $this->git('git log --first-parent --pretty=format:%H --branches=remotes/origin/master');
-		$a = $this->git_commit_count();
+		$a = $this->git_diff_file_list();
+		//$a = $this->git_commit_list();
 		print_r($a);
 	}
 
@@ -25,6 +26,30 @@ class PackagerGit extends PackagerAbstractModel
 	}
 
 	public function output_version($version2 = false, $version1 = false)
+	{
+
+	}
+
+	private function git_diff_file_list($version2 = false, $version1 = false)
+	{
+		$history = $this->git_commit_list();
+		//get initial commit
+		$initial_files = $this->git('git log ' . $history[0] . ' --name-status --pretty=format:');
+		unset($initial_files[0]);
+		print_r($initial_files);
+
+		//return $this->git('git diff --diff-filter=ACMRTUXB');
+		$diff = $this->git("git diff HEAD^^..HEAD --name-status");
+		//print_r($diff);
+		return $diff;
+	}
+
+	private function git_archive($sha_id)
+	{
+		$this->git('git archive --format=zip '.$sha_id.' -o output.zip');
+	}
+
+	private function git_archive_diff($sha_id1, $sha_id2, $removed_files = array())
 	{
 
 	}
@@ -42,7 +67,7 @@ class PackagerGit extends PackagerAbstractModel
 	private function git_commit_list($branch = false)
 	{
 		if ($branch==false) $branch = $this->GIT_BRANCH;
-		return $this->git('git log --first-parent --pretty=format:%H --branches=' . $branch);
+		return $this->git('git log --first-parent --reverse --pretty=format:%H --branches=' . $branch);
 	}
 
 	private function git_branch()
